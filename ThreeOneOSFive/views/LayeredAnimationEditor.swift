@@ -310,147 +310,128 @@ struct LayeredAnimationEditorView: View {
             for case let fileURL as URL in enumerator {
                 if fileURL.pathExtension == "ca" {
                     caBundle = fileURL
-                    if let bundleContents = try? fm.contentsOfDirectory(at: fileURL, includingPropertiesForKeys: nil) {
-                        let images = bundleContents.filter { ["png", "jpg", "jpeg", "heic", "webp"].contains($0.pathExtension.lowercased()) }
-                        for (index, imgURL) in images.enumerated() {
-                            let image = UIImage(contentsOfFile: imgURL.path)
-                            layers.append(AnimationLayer(
-                                id: UUID(),
-                                name: "图层 \(index + 1)",
-                                imageName: imgURL.lastPathComponent,
-                                imageURL: imgURL,
-                                previewImage: image,
-                                index: index,
-                                positionX: 0,
-                                positionY: 0,
-                                scale: 1.0,
-                                opacity: 1.0,
-                                rotation: 0
-                            ))
-                        }
-                    }
                 }
-                if fileURL.pathExtension == "caml" {
+                if fileURL.lastPathComponent == "main.caml" {
                     camlFile = fileURL
                     if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
                         camlContent = content
-                        let parsed = parseCAML(content, caBundle: caBundle)
-                        if !parsed.isEmpty {
-                            layers = parsed
-                        }
                     }
                 }
             }
         }
-        return (layers, caBundle, camlFile, camlContent)
-    }
 
-    private func parseCAML(_ content: String, caBundle: URL?) -> [AnimationLayer] {
-        var layers: [AnimationLayer] = []
-        let lines = content.components(separatedBy: .newlines)
-        var layerIndex = 0
-        var currentName = ""
-        var currentContents = ""
-        var currentPosX = 0.0
-        var currentPosY = 0.0
-        var currentScale = 1.0
-        var currentOpacity = 1.0
-        var currentRotation = 0.0
-        var inLayer = false
-
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.contains("addSublayer") || trimmed.contains("layer = {") {
-                if inLayer && !currentContents.isEmpty {
-                    let imageURL = caBundle?.appendingPathComponent(currentContents)
-                    let image = imageURL.flatMap { UIImage(contentsOfFile: $0.path) }
+        if let caBundle = caBundle {
+            let assetsDir = caBundle.appendingPathComponent("assets", isDirectory: true)
+            if fm.fileExists(atPath: assetsDir.path),
+               let assets = try? fm.contentsOfDirectory(at: assetsDir, includingPropertiesForKeys: nil) {
+                let images = assets.filter { ["png", "jpg", "jpeg", "heic", "webp"].contains($0.pathExtension.lowercased()) }
+                for (index, imgURL) in images.enumerated() {
+                    let image = UIImage(contentsOfFile: imgURL.path)
                     layers.append(AnimationLayer(
                         id: UUID(),
-                        name: currentName.isEmpty ? "图层 \(layerIndex + 1)" : currentName,
-                        imageName: currentContents,
-                        imageURL: imageURL,
+                        name: imgURL.deletingPathExtension().lastPathComponent,
+                        imageName: imgURL.lastPathComponent,
+                        imageURL: imgURL,
                         previewImage: image,
-                        index: layerIndex,
-                        positionX: currentPosX,
-                        positionY: currentPosY,
-                        scale: currentScale,
-                        opacity: currentOpacity,
-                        rotation: currentRotation
+                        index: index,
+                        positionX: 0,
+                        positionY: 0,
+                        scale: 1.0,
+                        opacity: 1.0,
+                        rotation: 0
                     ))
-                    layerIndex += 1
                 }
-                inLayer = true
-                currentName = ""
-                currentContents = ""
-                currentPosX = 0
-                currentPosY = 0
-                currentScale = 1
-                currentOpacity = 1
-                currentRotation = 0
-            }
-            if trimmed.hasPrefix("name") {
-                currentName = extractStringValue(from: trimmed)
-            }
-            if trimmed.hasPrefix("contents") {
-                currentContents = extractStringValue(from: trimmed)
-            }
-            if trimmed.hasPrefix("position") {
-                let pos = extractPoint(from: trimmed)
-                currentPosX = pos.x
-                currentPosY = pos.y
-            }
-            if trimmed.hasPrefix("opacity") {
-                currentOpacity = extractDouble(from: trimmed) ?? 1.0
-            }
-            if trimmed.contains("scale") {
-                currentScale = extractDouble(from: trimmed) ?? 1.0
-            }
-            if trimmed.contains("rotation") || trimmed.contains("zRotation") {
-                currentRotation = (extractDouble(from: trimmed) ?? 0) * 180 / .pi
             }
         }
 
-        if inLayer && !currentContents.isEmpty {
-            let imageURL = caBundle?.appendingPathComponent(currentContents)
-            let image = imageURL.flatMap { UIImage(contentsOfFile: $0.path) }
+        if !camlContent.isEmpty {
+            let parsed = parseCAMLXML(camlContent, caBundle: caBundle)
+            if !parsed.isEmpty {
+                layers = parsed
+            }
+        }
+
+        return (layers, caBundle, camlFile, camlContent)
+    }
+
+    private func parseCAMLXML(_ content: String, caBundle: URL?) -> [AnimationLayer] {
+        var layers: [AnimationLayer] = []
+        let fm = FileManager.default
+
+        let layerPattern = "<CALayer\\s+([^>]+)>"
+        guard let regex = try? NSRegularExpression(pattern: layerPattern, options: []) else { return layers }
+        let matches = regex.matches(in: content, range: NSRange(content.startIndex..., in: content))
+
+        var layerIndex = 0
+        for match in matches {
+            guard let attrRange = Range(match.range(at: 1), in: content) else { continue }
+            let attrs = String(content[attrRange])
+
+            let id = extractXMLAttr("id", from: attrs)
+            let name = extractXMLAttr("name", from: attrs)
+            let position = extractXMLAttr("position", from: attrs)
+            let bounds = extractXMLAttr("bounds", from: attrs)
+            let opacityStr = extractXMLAttr("opacity", from: attrs)
+            let rotationStr = extractXMLAttr("transform.rotation.z", from: attrs)
+
+            let posComponents = position?.components(separatedBy: .whitespaces).compactMap { Double($0) } ?? []
+            let posX = posComponents.count >= 1 ? posComponents[0] : 0
+            let posY = posComponents.count >= 2 ? posComponents[1] : 0
+
+            let boundsComponents = bounds?.components(separatedBy: .whitespaces).compactMap { Double($0) } ?? []
+            let width = boundsComponents.count >= 3 ? boundsComponents[2] : 100
+            let scale = width > 0 ? width / 100.0 : 1.0
+
+            let opacity = Double(opacityStr ?? "1") ?? 1.0
+            let rotation = (Double(rotationStr ?? "0") ?? 0) * 180 / .pi
+
+            var imageName: String?
+            var imageURL: URL?
+            var previewImage: UIImage?
+
+            if let caBundle = caBundle {
+                let contentsPattern = "CGImage\\s+src=\"([^\"]+)\""
+                if let contentsRegex = try? NSRegularExpression(pattern: contentsPattern, options: []),
+                   let layerStart = content.range(of: attrs)?.lowerBound,
+                   let afterLayer = content[layerStart...].range(of: "</CALayer>")?.lowerBound {
+                    let layerContent = String(content[layerStart..<afterLayer])
+                    if let cMatch = contentsRegex.firstMatch(in: layerContent, range: NSRange(layerContent.startIndex..., in: layerContent)),
+                       let srcRange = Range(cMatch.range(at: 1), in: layerContent) {
+                        let src = String(layerContent[srcRange])
+                        imageName = (src as NSString).lastPathComponent
+                        imageURL = caBundle.appendingPathComponent(src)
+                        if fm.fileExists(atPath: imageURL!.path) {
+                            previewImage = UIImage(contentsOfFile: imageURL!.path)
+                        }
+                    }
+                }
+            }
+
             layers.append(AnimationLayer(
                 id: UUID(),
-                name: currentName.isEmpty ? "图层 \(layerIndex + 1)" : currentName,
-                imageName: currentContents,
+                name: name.isEmpty ? "图层 \(layerIndex + 1)" : name,
+                imageName: imageName,
                 imageURL: imageURL,
-                previewImage: image,
+                previewImage: previewImage,
                 index: layerIndex,
-                positionX: currentPosX,
-                positionY: currentPosY,
-                scale: currentScale,
-                opacity: currentOpacity,
-                rotation: currentRotation
+                positionX: posX,
+                positionY: posY,
+                scale: scale,
+                opacity: opacity,
+                rotation: rotation
             ))
+            layerIndex += 1
         }
 
         return layers
     }
 
-    private func extractStringValue(from line: String) -> String {
-        if let range = line.range(of: "\"[^\"]+\"", options: .regularExpression) {
-            return String(line[range]).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-        }
-        return ""
-    }
-
-    private func extractDouble(from line: String) -> Double? {
-        if let range = line.range(of: "-?\\d+\\.?\\d*", options: .regularExpression) {
-            return Double(String(line[range]))
-        }
-        return nil
-    }
-
-    private func extractPoint(from line: String) -> (x: Double, y: Double) {
-        let numbers = line.matches(for: "-?\\d+\\.?\\d*").compactMap { Double($0) }
-        if numbers.count >= 2 {
-            return (numbers[0], numbers[1])
-        }
-        return (0, 0)
+    private func extractXMLAttr(_ name: String, from attrs: String) -> String? {
+        let pattern = "\(name)=\"([^\"]*)\""
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: attrs, range: NSRange(attrs.startIndex..., in: attrs)),
+              let range = Range(match.range(at: 1), in: attrs) else { return nil }
+        return String(attrs[range])
     }
 
     private func updateLayer(_ layer: AnimationLayer, transform: (inout AnimationLayer) -> Void) {
@@ -506,66 +487,32 @@ struct LayeredAnimationEditorView: View {
     private func generateCAML(from layers: [AnimationLayer], original: String) -> String {
         var result = original
         for layer in layers {
-            if let imageName = layer.imageName {
-                let pattern = "contents\\s*=\\s*\"\(NSRegularExpression.escapedPattern(for: imageName))\""
-                if let range = result.range(of: pattern, options: .regularExpression) {
-                    let layerBlock = extractLayerBlock(containing: range, in: result)
-                    if !layerBlock.isEmpty {
-                        var newBlock = layerBlock
-                        newBlock = updateKey("position", in: newBlock, value: "{\(layer.positionX), \(layer.positionY)}")
-                        newBlock = updateKey("opacity", in: newBlock, value: "\(layer.opacity)")
-                        newBlock = updateKey("transform.scale", in: newBlock, value: "\(layer.scale)")
-                        newBlock = updateKey("transform.rotation", in: newBlock, value: "\(layer.rotation * .pi / 180)")
-                        result = result.replacingOccurrences(of: layerBlock, with: newBlock)
-                    }
-                }
-            }
+            guard let imageName = layer.imageName else { continue }
+            let pattern = "<CALayer\\s+[^>]*name=\"\(NSRegularExpression.escapedPattern(for: imageName))\"[^>]*>"
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+                  let match = regex.firstMatch(in: result, range: NSRange(result.startIndex..., in: result)),
+                  let range = Range(match.range, in: result) else { continue }
+
+            let tag = String(result[range])
+            var newTag = tag
+
+            newTag = updateXMLAttr("position", in: newTag, value: "\(layer.positionX) \(layer.positionY)")
+            newTag = updateXMLAttr("opacity", in: newTag, value: "\(layer.opacity)")
+            newTag = updateXMLAttr("transform.rotation.z", in: newTag, value: "\(layer.rotation * .pi / 180)")
+
+            result = result.replacingCharacters(in: range, with: newTag)
         }
         return result
     }
 
-    private func extractLayerBlock(containing range: Range<String.Index>, in text: String) -> String {
-        var start = range.lowerBound
-        var braceCount = 0
-        var foundStart = false
-        while start > text.startIndex {
-            let char = text[text.index(before: start)]
-            if char == "}" && foundStart { break }
-            if char == "{" {
-                braceCount += 1
-                foundStart = true
-            }
-            start = text.index(before: start)
-            if foundStart && braceCount == 0 { break }
+    private func updateXMLAttr(_ name: String, in tag: String, value: String) -> String {
+        let pattern = "\(name)=\"[^\"]*\""
+        if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+           let match = regex.firstMatch(in: tag, range: NSRange(tag.startIndex..., in: tag)),
+           let range = Range(match.range, in: tag) {
+            return tag.replacingCharacters(in: range, with: "\(name)=\"\(value)\"")
         }
-        var end = range.upperBound
-        braceCount = 0
-        while end < text.endIndex {
-            let char = text[end]
-            if char == "{" { braceCount += 1 }
-            if char == "}" {
-                if braceCount == 0 {
-                    end = text.index(after: end)
-                    break
-                }
-                braceCount -= 1
-            }
-            end = text.index(after: end)
-        }
-        return String(text[start..<end])
-    }
-
-    private func updateKey(_ key: String, in block: String, value: String) -> String {
-        let patterns = [
-            "\(key)\\s*=\\s*[^;]+;",
-            "\(key)\\s*=\\s*\\{[^}]+\\};"
-        ]
-        for pattern in patterns {
-            if let range = block.range(of: pattern, options: .regularExpression) {
-                return block.replacingCharacters(in: range, with: "\(key) = \(value);")
-            }
-        }
-        return block
+        return tag
     }
 }
 

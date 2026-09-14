@@ -44,15 +44,14 @@ enum WallpaperVideoConverter {
             throw WallpaperVideoError.unsupportedVideo
         }
 
-        let descriptorName = UUID().uuidString.uppercased()
-        let descriptorURL = outputDirectory.appendingPathComponent(
-            "video-descriptors/\(descriptorName)",
-            isDirectory: true
-        )
-        try fileManager.createDirectory(at: descriptorURL, withIntermediateDirectories: true)
+        let descriptorID = UUID().uuidString.uppercased()
+        let packageRoot = outputDirectory.appendingPathComponent("pkg-\(descriptorID)", isDirectory: true)
+        let descriptorURL = packageRoot.appendingPathComponent("descriptors/\(descriptorID)", isDirectory: true)
+        let contentsURL = descriptorURL.appendingPathComponent("versions/1/contents/video.wallpaper", isDirectory: true)
+        try fileManager.createDirectory(at: contentsURL, withIntermediateDirectories: true)
 
-        let videoOutputURL = descriptorURL.appendingPathComponent("video.mp4")
-        let posterOutputURL = descriptorURL.appendingPathComponent("poster.heic")
+        let videoOutputURL = contentsURL.appendingPathComponent("video.mp4")
+        let posterOutputURL = contentsURL.appendingPathComponent("poster.heic")
 
         try exportVideo(
             asset: asset,
@@ -69,27 +68,68 @@ enum WallpaperVideoConverter {
 
         let identifier = Int.random(in: 10_000...2_000_000_000)
 
-        try writeIdentifierFile(at: descriptorURL, identifier: identifier)
-        try writeWallpaperPlist(
-            at: descriptorURL,
-            identifier: identifier,
-            videoFilename: "video.mp4",
-            posterFilename: "poster.heic",
-            duration: options.trimDuration.seconds,
-            loop: options.loop
-        )
-        try writeUserInfoFile(at: descriptorURL, identifier: identifier)
+        try writeDescriptorFiles(at: descriptorURL, identifier: identifier)
+        try writeWallpaperMetadata(at: contentsURL, identifier: identifier, duration: options.trimDuration.seconds)
 
         let tendiesURL = outputDirectory.appendingPathComponent(
-            "\(descriptorName).tendies"
+            "video-\(descriptorID).tendies"
         )
         try packageAsTendies(
-            descriptorRoot: outputDirectory.appendingPathComponent("video-descriptors"),
+            descriptorRoot: packageRoot,
             outputURL: tendiesURL,
             fileManager: fileManager
         )
 
         return tendiesURL
+    }
+
+    private static func writeDescriptorFiles(at descriptorURL: URL, identifier: Int) throws {
+        let identifierData = String(identifier).data(using: .utf8)
+        try identifierData?.write(
+            to: descriptorURL.appendingPathComponent("com.apple.posterkit.provider.descriptor.identifier"),
+            options: .atomic
+        )
+
+        let roleData = "PRPosterRoleLockScreen".data(using: .utf8)
+        try roleData?.write(
+            to: descriptorURL.appendingPathComponent("com.apple.posterkit.role.identifier"),
+            options: .atomic
+        )
+
+        let providerInfo: [String: Any] = [
+            "providerIdentifier": "com.apple.PhotosUIPrivate.PhotosPosterProvider",
+            "descriptorIdentifier": identifier
+        ]
+        let providerData = try PropertyListSerialization.data(
+            fromPropertyList: providerInfo,
+            format: .binary,
+            options: 0
+        )
+        try providerData.write(
+            to: descriptorURL.appendingPathComponent("providerInfo.plist"),
+            options: .atomic
+        )
+    }
+
+    private static func writeWallpaperMetadata(at contentsURL: URL, identifier: Int, duration: Double) throws {
+        let metadata: [String: Any] = [
+            "identifier": identifier,
+            "video": "video.mp4",
+            "poster": "poster.heic",
+            "duration": duration,
+            "autoplay": true,
+            "muted": true,
+            "type": "video"
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: metadata,
+            format: .binary,
+            options: 0
+        )
+        try data.write(
+            to: contentsURL.appendingPathComponent("Wallpaper.plist"),
+            options: .atomic
+        )
     }
 
     private static func exportVideo(
@@ -151,65 +191,6 @@ enum WallpaperVideoConverter {
         } catch {
             throw WallpaperVideoError.thumbnailFailed
         }
-    }
-
-    private static func writeIdentifierFile(at descriptorURL: URL, identifier: Int) throws {
-        let data = String(identifier).data(using: .utf8)
-        try data?.write(
-            to: descriptorURL.appendingPathComponent(
-                "com.apple.posterkit.provider.descriptor.identifier"
-            ),
-            options: .atomic
-        )
-    }
-
-    private static func writeUserInfoFile(at descriptorURL: URL, identifier: Int) throws {
-        let plist: [String: Any] = [
-            "wallpaperRepresentingIdentifier": identifier,
-            "wallpaperType": "video",
-            "autoplay": true,
-            "muted": true
-        ]
-        let data = try PropertyListSerialization.data(
-            fromPropertyList: plist,
-            format: .binary,
-            options: 0
-        )
-        try data.write(
-            to: descriptorURL.appendingPathComponent(
-                "com.apple.posterkit.provider.contents.userInfo"
-            ),
-            options: .atomic
-        )
-    }
-
-    private static func writeWallpaperPlist(
-        at descriptorURL: URL,
-        identifier: Int,
-        videoFilename: String,
-        posterFilename: String,
-        duration: Double,
-        loop: Bool
-    ) throws {
-        let plist: [String: Any] = [
-            "identifier": identifier,
-            "video": videoFilename,
-            "poster": posterFilename,
-            "duration": duration,
-            "loop": loop,
-            "type": "video",
-            "autoplay": true,
-            "muted": true
-        ]
-        let data = try PropertyListSerialization.data(
-            fromPropertyList: plist,
-            format: .binary,
-            options: 0
-        )
-        try data.write(
-            to: descriptorURL.appendingPathComponent("Wallpaper.plist"),
-            options: .atomic
-        )
     }
 
     private static func packageAsTendies(
