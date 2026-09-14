@@ -409,7 +409,7 @@ struct LayeredAnimationEditorView: View {
 
             layers.append(AnimationLayer(
                 id: UUID(),
-                name: name.isEmpty ? "图层 \(layerIndex + 1)" : name,
+                name: (name?.isEmpty ?? true) ? "图层 \(layerIndex + 1)" : name!,
                 imageName: imageName,
                 imageURL: imageURL,
                 previewImage: previewImage,
