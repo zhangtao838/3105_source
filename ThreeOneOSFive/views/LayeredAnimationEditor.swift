@@ -13,14 +13,10 @@ struct LayeredAnimationEditorView: View {
     @State private var caBundleURL: URL?
     @State private var camlURL: URL?
     @State private var originalCAMLContent: String = ""
-    @State private var currentTab: EditorTab = .layers
-    @State private var canvasScale: CGFloat = 1.0
+    @State private var showLayersSheet = false
+    @State private var showPropertiesSheet = false
+    @State private var dragOffset: CGSize = .zero
     @State private var isDragging = false
-
-    enum EditorTab {
-        case layers
-        case properties
-    }
 
     var selectedLayer: AnimationLayer? {
         layers.first { $0.id == selectedLayerID }
@@ -32,14 +28,14 @@ struct LayeredAnimationEditorView: View {
                 if package == nil {
                     emptyState
                 } else {
-                    VStack(spacing: 0) {
+                    ZStack {
                         previewCanvas
-                        tabBar
-                        tabContent
+                        floatingControls
                     }
+                    .ignoresSafeArea(edges: .bottom)
                 }
             }
-            .navigationTitle("分层动画编辑器")
+            .navigationTitle(package?.displayName ?? "分层动画编辑器")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -57,8 +53,6 @@ struct LayeredAnimationEditorView: View {
                                 package = nil
                                 layers = []
                                 selectedLayerID = nil
-                                caBundleURL = nil
-                                camlURL = nil
                             } label: {
                                 Label("关闭", systemImage: "xmark")
                             }
@@ -83,6 +77,14 @@ struct LayeredAnimationEditorView: View {
                 )
                 .ignoresSafeArea()
             }
+            .sheet(isPresented: $showLayersSheet) {
+                layersSheet
+            }
+            .sheet(isPresented: $showPropertiesSheet) {
+                if let layer = selectedLayer {
+                    propertiesSheet(layer: layer)
+                }
+            }
             .sheet(isPresented: $showExport) {
                 if let url = exportURL {
                     ActivityViewController(activityItems: [url])
@@ -91,8 +93,6 @@ struct LayeredAnimationEditorView: View {
         }
     }
 
-    // MARK: - Empty State
-
     private var emptyState: some View {
         VStack(spacing: 20) {
             Image(systemName: "square.stack.3d.up")
@@ -100,7 +100,7 @@ struct LayeredAnimationEditorView: View {
                 .foregroundStyle(Color(red: 0.42, green: 0.36, blue: 0.91).opacity(0.5))
             Text("分层动画编辑器")
                 .font(.title2.weight(.bold))
-            Text("打开 .tendies 壁纸包，可视化编辑分层动画\n支持拖动、缩放、旋转、透明度调节")
+            Text("打开 .tendies 壁纸包，全屏可视化编辑分层动画\n支持拖动、缩放、旋转、透明度调节")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -120,42 +120,44 @@ struct LayeredAnimationEditorView: View {
         .background(Color(red: 0.96, green: 0.96, blue: 0.98).ignoresSafeArea())
     }
 
-    // MARK: - Preview Canvas
-
     private var previewCanvas: some View {
         GeometryReader { geometry in
             ZStack {
-                Color(red: 0.15, green: 0.15, blue: 0.18)
-                    .cornerRadius(12)
+                Color(red: 0.12, green: 0.12, blue: 0.15)
+                    .ignoresSafeArea()
 
                 if isLoading {
                     ProgressView("正在解析...")
                         .tint(.white)
+                        .controlSize(.large)
                 } else if let error = errorMessage {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 12) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.largeTitle)
+                            .font(.system(size: 48))
                             .foregroundStyle(.orange)
                         Text(error)
-                            .font(.caption)
+                            .font(.subheadline)
                             .foregroundStyle(.white.opacity(0.8))
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
+                            .padding(.horizontal, 30)
                     }
                 } else if layers.isEmpty {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 12) {
                         Image(systemName: "square.stack")
-                            .font(.largeTitle)
-                            .foregroundStyle(.white.opacity(0.4))
+                            .font(.system(size: 48))
+                            .foregroundStyle(.white.opacity(0.3))
                         Text("未找到图层")
-                            .font(.subheadline)
+                            .font(.title3)
                             .foregroundStyle(.white.opacity(0.6))
+                        Text("这个壁纸包可能不包含可编辑的分层动画")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.4))
                     }
                 } else {
                     let canvasSize = geometry.size
                     let baseWidth: CGFloat = 390
                     let baseHeight: CGFloat = 844
-                    let scale = min(canvasSize.width / baseWidth, canvasSize.height / baseHeight) * 0.9
+                    let scale = min(canvasSize.width / baseWidth, canvasSize.height / baseHeight) * 0.95
                     let offsetX = (canvasSize.width - baseWidth * scale) / 2
                     let offsetY = (canvasSize.height - baseHeight * scale) / 2
 
@@ -166,193 +168,240 @@ struct LayeredAnimationEditorView: View {
                                 isSelected: layer.id == selectedLayerID,
                                 scale: scale
                             )
-                            .offset(x: offsetX + (layer.positionX - layer.boundsWidth / 2) * scale,
-                                    y: offsetY + (layer.positionY - layer.boundsHeight / 2) * scale)
+                            .offset(
+                                x: offsetX + (layer.positionX - layer.boundsWidth / 2) * scale + (layer.id == selectedLayerID ? dragOffset.width : 0),
+                                y: offsetY + (layer.positionY - layer.boundsHeight / 2) * scale + (layer.id == selectedLayerID ? dragOffset.height : 0)
+                            )
+                            .contentShape(Rectangle().inset(by: -20))
+                            .onTapGesture {
+                                selectedLayerID = layer.id
+                            }
                             .gesture(
                                 DragGesture()
                                     .onChanged { value in
+                                        if selectedLayerID != layer.id {
+                                            selectedLayerID = layer.id
+                                        }
                                         isDragging = true
-                                        selectedLayerID = layer.id
+                                        dragOffset = value.translation
+                                    }
+                                    .onEnded { value in
+                                        isDragging = false
                                         let newX = layer.positionX + value.translation.width / scale
                                         let newY = layer.positionY + value.translation.height / scale
                                         updateLayer(layer) { $0.positionX = newX; $0.positionY = newY }
-                                    }
-                                    .onEnded { _ in
-                                        isDragging = false
+                                        dragOffset = .zero
                                     }
                             )
-                            .onTapGesture {
-                                selectedLayerID = layer.id
-                                currentTab = .properties
-                            }
                         }
                     }
 
                     VStack {
                         HStack {
-                            Text("\(layers.count) 图层")
-                                .font(.caption2)
-                                .foregroundStyle(.white.opacity(0.6))
+                            Label("\(layers.count) 图层", systemImage: "square.stack.3d.down.forward")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(.ultraThinMaterial)
+                                .cornerRadius(8)
                             Spacer()
                             if isDragging {
-                                Text("拖动中...")
-                                    .font(.caption2)
+                                Label("拖动中", systemImage: "hand.point.up.left.fill")
+                                    .font(.caption)
                                     .foregroundStyle(.yellow)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(.ultraThinMaterial)
+                                    .cornerRadius(8)
                             }
                         }
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 16)
                         .padding(.top, 8)
                         Spacer()
                     }
                 }
             }
-            .padding(8)
-            .frame(height: UIScreen.main.bounds.height * 0.42)
         }
     }
 
-    // MARK: - Tab Bar
+    private var floatingControls: some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 16) {
+                floatingButton(
+                    title: "图层",
+                    icon: "square.stack.3d.down.forward",
+                    badge: layers.count
+                ) {
+                    showLayersSheet = true
+                }
 
-    private var tabBar: some View {
-        HStack(spacing: 0) {
-            tabButton(title: "图层", icon: "square.stack.3d.down.forward", tab: .layers)
-            tabButton(title: "属性", icon: "slider.horizontal.3", tab: .properties)
+                floatingButton(
+                    title: "属性",
+                    icon: "slider.horizontal.3",
+                    badge: nil
+                ) {
+                    if selectedLayer != nil {
+                        showPropertiesSheet = true
+                    }
+                }
+                .opacity(selectedLayer != nil ? 1.0 : 0.4)
+
+                floatingButton(
+                    title: "导出",
+                    icon: "square.and.arrow.up",
+                    badge: nil
+                ) {
+                    exportPackage()
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 24)
         }
-        .frame(height: 44)
-        .background(Color.white)
     }
 
-    private func tabButton(title: String, icon: String, tab: EditorTab) -> some View {
-        Button {
-            currentTab = tab
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
+    private func floatingButton(title: String, icon: String, badge: Int?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                ZStack {
+                    Image(systemName: icon)
+                        .font(.system(size: 22, weight: .medium))
+                    if let badge = badge {
+                        Text("\(badge)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.red)
+                            .clipShape(Capsule())
+                            .offset(x: 12, y: -12)
+                    }
+                }
                 Text(title)
+                    .font(.caption2.weight(.medium))
             }
-            .font(.subheadline.weight(.medium))
-            .foregroundStyle(currentTab == tab ? Color(red: 0.42, green: 0.36, blue: 0.91) : .gray)
-            .frame(maxWidth: .infinity)
-            .frame(height: 44)
-            .overlay(alignment: .bottom) {
-                if currentTab == tab {
-                    Rectangle()
-                        .fill(Color(red: 0.42, green: 0.36, blue: 0.91))
-                        .frame(height: 2)
+            .foregroundStyle(.white)
+            .frame(width: 64, height: 64)
+            .background(.ultraThinMaterial)
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+            )
+        }
+    }
+
+    private var layersSheet: some View {
+        NavigationStack {
+            List {
+                if layers.isEmpty {
+                    EmptyStateView(title: "无图层", systemImage: "square.stack", description: "这个壁纸包不包含可编辑的图层")
+                } else {
+                    ForEach(Array(layers.enumerated()), id: \.element.id) { index, layer in
+                        LayerListRow(
+                            layer: layer,
+                            index: index,
+                            isSelected: layer.id == selectedLayerID,
+                            onSelect: {
+                                selectedLayerID = layer.id
+                                showLayersSheet = false
+                                showPropertiesSheet = true
+                            },
+                            onDelete: { deleteLayer(layer) },
+                            onMoveUp: { moveLayer(layer, direction: -1) },
+                            onMoveDown: { moveLayer(layer, direction: 1) }
+                        )
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("图层列表")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { showLayersSheet = false }
                 }
             }
         }
+        .presentationDetents([.medium, .large])
     }
 
-    // MARK: - Tab Content
-
-    @ViewBuilder
-    private var tabContent: some View {
-        switch currentTab {
-        case .layers:
-            layersList
-        case .properties:
-            propertiesPanel
-        }
-    }
-
-    // MARK: - Layers List
-
-    private var layersList: some View {
-        List {
-            if layers.isEmpty {
-                EmptyStateView(title: "无图层", systemImage: "square.stack", description: "这个壁纸包不包含可编辑的图层")
-            } else {
-                ForEach(Array(layers.enumerated()), id: \.element.id) { index, layer in
-                    LayerListRow(
-                        layer: layer,
-                        index: index,
-                        isSelected: layer.id == selectedLayerID,
-                        onSelect: { selectedLayerID = layer.id; currentTab = .properties },
-                        onDelete: { deleteLayer(layer) },
-                        onMoveUp: { moveLayer(layer, direction: -1) },
-                        onMoveDown: { moveLayer(layer, direction: 1) }
-                    )
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .frame(maxHeight: .infinity)
-    }
-
-    // MARK: - Properties Panel
-
-    private var propertiesPanel: some View {
-        ScrollView {
-            if let layer = selectedLayer {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 12) {
+    private func propertiesSheet(layer: AnimationLayer) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 16) {
                         if let image = layer.previewImage {
                             Image(uiImage: image)
                                 .resizable()
                                 .scaledToFit()
-                                .frame(width: 60, height: 60)
-                                .cornerRadius(8)
+                                .frame(width: 80, height: 80)
+                                .cornerRadius(12)
                                 .background(Color.gray.opacity(0.1))
                         } else {
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: 12)
                                 .fill(Color.gray.opacity(0.1))
-                                .frame(width: 60, height: 60)
-                                .overlay(Image(systemName: "photo").foregroundStyle(.gray))
+                                .frame(width: 80, height: 80)
+                                .overlay(Image(systemName: "photo").font(.title).foregroundStyle(.gray))
                         }
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(layer.name)
-                                .font(.headline)
+                                .font(.title3.weight(.bold))
                             Text(layer.imageName ?? "无图片")
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
                             Text("尺寸: \(Int(layer.boundsWidth))×\(Int(layer.boundsHeight))")
-                                .font(.caption2)
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
 
                     Group {
                         propertySlider(title: "位置 X", value: Binding(
-                            get: { layer.positionX },
-                            set: { newValue in updateLayer(layer) { $0.positionX = newValue } }
+                            get: { (layers.first { $0.id == layer.id })?.positionX ?? layer.positionX },
+                            set: { newValue in if let l = layers.first(where: { $0.id == layer.id }) { updateLayer(l) { $0.positionX = newValue } } }
                         ), range: -500...500, unit: "pt")
 
                         propertySlider(title: "位置 Y", value: Binding(
-                            get: { layer.positionY },
-                            set: { newValue in updateLayer(layer) { $0.positionY = newValue } }
+                            get: { (layers.first { $0.id == layer.id })?.positionY ?? layer.positionY },
+                            set: { newValue in if let l = layers.first(where: { $0.id == layer.id }) { updateLayer(l) { $0.positionY = newValue } } }
                         ), range: -500...1500, unit: "pt")
 
                         propertySlider(title: "缩放", value: Binding(
-                            get: { layer.scale },
-                            set: { newValue in updateLayer(layer) { $0.scale = newValue } }
+                            get: { (layers.first { $0.id == layer.id })?.scale ?? layer.scale },
+                            set: { newValue in if let l = layers.first(where: { $0.id == layer.id }) { updateLayer(l) { $0.scale = newValue } } }
                         ), range: 0.1...3.0, unit: "x")
 
                         propertySlider(title: "透明度", value: Binding(
-                            get: { layer.opacity },
-                            set: { newValue in updateLayer(layer) { $0.opacity = newValue } }
+                            get: { (layers.first { $0.id == layer.id })?.opacity ?? layer.opacity },
+                            set: { newValue in if let l = layers.first(where: { $0.id == layer.id }) { updateLayer(l) { $0.opacity = newValue } } }
                         ), range: 0...1, unit: "%")
 
                         propertySlider(title: "旋转", value: Binding(
-                            get: { layer.rotation },
-                            set: { newValue in updateLayer(layer) { $0.rotation = newValue } }
+                            get: { (layers.first { $0.id == layer.id })?.rotation ?? layer.rotation },
+                            set: { newValue in if let l = layers.first(where: { $0.id == layer.id }) { updateLayer(l) { $0.rotation = newValue } } }
                         ), range: -180...180, unit: "°")
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 20)
 
                     HStack(spacing: 12) {
                         Button {
-                            resetLayer(layer)
+                            if let l = layers.first(where: { $0.id == layer.id }) {
+                                resetLayer(l)
+                            }
                         } label: {
                             Label("重置", systemImage: "arrow.counterclockwise")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.bordered)
+                        .controlSize(.large)
 
                         Button {
+                            showPropertiesSheet = false
                             exportPackage()
                         } label: {
                             Label("保存并导出", systemImage: "square.and.arrow.up")
@@ -360,34 +409,42 @@ struct LayeredAnimationEditorView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(Color(red: 0.42, green: 0.36, blue: 0.91))
+                        .controlSize(.large)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
                 }
-            } else {
-                EmptyStateView(title: "未选中图层", systemImage: "slider.horizontal.3", description: "在画布或图层列表中选择一个图层")
+            }
+            .navigationTitle("图层属性")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("完成") { showPropertiesSheet = false }
+                }
             }
         }
-        .frame(maxHeight: .infinity)
-        .background(Color(red: 0.96, green: 0.96, blue: 0.98))
+        .presentationDetents([.large])
     }
 
     private func propertySlider(title: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(title)
                     .font(.subheadline.weight(.medium))
                 Spacer()
                 Text("\(String(format: "%.1f", value.wrappedValue))\(unit)")
-                    .font(.caption.monospaced())
+                    .font(.subheadline.monospaced())
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.gray.opacity(0.1))
+                    .cornerRadius(6)
             }
             Slider(value: value, in: range)
                 .tint(Color(red: 0.42, green: 0.36, blue: 0.91))
+                .controlSize(.large)
         }
     }
-
-    // MARK: - Layer Operations
 
     private func deleteLayer(_ layer: AnimationLayer) {
         layers.removeAll { $0.id == layer.id }
@@ -420,8 +477,6 @@ struct LayeredAnimationEditorView: View {
         transform(&updated)
         layers[index] = updated
     }
-
-    // MARK: - Package Loading
 
     private func loadPackage(_ url: URL) {
         isLoading = true
@@ -609,8 +664,6 @@ struct LayeredAnimationEditorView: View {
         return String(attrs[range])
     }
 
-    // MARK: - Export
-
     private func exportPackage() {
         guard let pkg = package else { return }
         isLoading = true
@@ -685,8 +738,6 @@ struct LayeredAnimationEditorView: View {
     }
 }
 
-// MARK: - Data Models
-
 struct AnimationLayer: Identifiable, Equatable {
     let id: UUID
     var name: String
@@ -712,8 +763,6 @@ struct AnimationLayer: Identifiable, Equatable {
     }
 }
 
-// MARK: - Preview Views
-
 struct LayerPreviewView: View {
     let layer: AnimationLayer
     let isSelected: Bool
@@ -737,9 +786,9 @@ struct LayerPreviewView: View {
         .rotationEffect(.degrees(layer.rotation))
         .overlay(
             RoundedRectangle(cornerRadius: 2)
-                .stroke(isSelected ? Color.yellow : Color.clear, lineWidth: 2)
+                .stroke(isSelected ? Color.yellow : Color.clear, lineWidth: 3)
         )
-        .shadow(color: isSelected ? Color.yellow.opacity(0.5) : Color.clear, radius: 8)
+        .shadow(color: isSelected ? Color.yellow.opacity(0.6) : Color.clear, radius: 12)
     }
 }
 
@@ -760,20 +809,20 @@ struct LayerListRow: View {
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 44, height: 44)
-                            .cornerRadius(8)
+                            .frame(width: 50, height: 50)
+                            .cornerRadius(10)
                             .clipped()
                     } else {
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 10)
                             .fill(Color(red: 0.42, green: 0.36, blue: 0.91).opacity(0.15))
-                            .frame(width: 44, height: 44)
+                            .frame(width: 50, height: 50)
                             .overlay(Image(systemName: "square.2.layers.3d").foregroundStyle(Color(red: 0.42, green: 0.36, blue: 0.91)))
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(layer.name)
-                        .font(.subheadline.weight(.medium))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                     Text(layer.imageName ?? "无图片")
                         .font(.caption2)
@@ -786,28 +835,28 @@ struct LayerListRow: View {
 
                 Spacer()
 
-                HStack(spacing: 4) {
+                HStack(spacing: 2) {
                     Button(action: onMoveUp) {
                         Image(systemName: "chevron.up")
                             .font(.caption)
                             .foregroundStyle(.gray)
-                            .frame(width: 24, height: 24)
+                            .frame(width: 28, height: 28)
                     }
                     Button(action: onMoveDown) {
                         Image(systemName: "chevron.down")
                             .font(.caption)
                             .foregroundStyle(.gray)
-                            .frame(width: 24, height: 24)
+                            .frame(width: 28, height: 28)
                     }
                     Button(role: .destructive, action: onDelete) {
                         Image(systemName: "trash")
                             .font(.caption)
                             .foregroundStyle(.red)
-                            .frame(width: 24, height: 24)
+                            .frame(width: 28, height: 28)
                     }
                 }
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
         .listRowBackground(isSelected ? Color(red: 0.42, green: 0.36, blue: 0.91).opacity(0.08) : Color.white)
