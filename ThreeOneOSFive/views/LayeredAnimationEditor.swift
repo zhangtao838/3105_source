@@ -172,7 +172,7 @@ struct LayeredAnimationEditorView: View {
                         .foregroundStyle(.secondary)
                     Slider(value: Binding(
                         get: { layer.positionX },
-                        set: { updateLayer(layer) { $0.positionX = $0 } }
+                        set: { newValue in updateLayer(layer) { $0.positionX = newValue } }
                     ), in: -200...200)
 
                     Text("位置 Y")
@@ -180,7 +180,7 @@ struct LayeredAnimationEditorView: View {
                         .foregroundStyle(.secondary)
                     Slider(value: Binding(
                         get: { layer.positionY },
-                        set: { updateLayer(layer) { $0.positionY = $0 } }
+                        set: { newValue in updateLayer(layer) { $0.positionY = newValue } }
                     ), in: -200...200)
 
                     Text("缩放")
@@ -188,7 +188,7 @@ struct LayeredAnimationEditorView: View {
                         .foregroundStyle(.secondary)
                     Slider(value: Binding(
                         get: { layer.scale },
-                        set: { updateLayer(layer) { $0.scale = $0 } }
+                        set: { newValue in updateLayer(layer) { $0.scale = newValue } }
                     ), in: 0.5...2.0)
 
                     Text("透明度")
@@ -196,7 +196,7 @@ struct LayeredAnimationEditorView: View {
                         .foregroundStyle(.secondary)
                     Slider(value: Binding(
                         get: { layer.opacity },
-                        set: { updateLayer(layer) { $0.opacity = $0 } }
+                        set: { newValue in updateLayer(layer) { $0.opacity = newValue } }
                     ), in: 0...1)
 
                     Text("旋转角度")
@@ -204,7 +204,7 @@ struct LayeredAnimationEditorView: View {
                         .foregroundStyle(.secondary)
                     Slider(value: Binding(
                         get: { layer.rotation },
-                        set: { updateLayer(layer) { $0.rotation = $0 } }
+                        set: { newValue in updateLayer(layer) { $0.rotation = newValue } }
                     ), in: -180...180)
                 }
 
