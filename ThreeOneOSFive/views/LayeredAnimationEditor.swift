@@ -273,7 +273,7 @@ struct LayeredAnimationEditorView: View {
         errorMessage = nil
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let pkg = try WallpaperStagedPackage.importPackage(from: url)
+                let pkg = try WallpaperPackageStore.importPackage(from: url)
                 let (parsedLayers, caURL, camlPath, camlContent) = try parseLayers(from: pkg)
                 DispatchQueue.main.async {
                     package = pkg
@@ -470,7 +470,7 @@ struct LayeredAnimationEditorView: View {
                 try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
                 defer { try? FileManager.default.removeItem(at: tempDir) }
 
-                let sourceDir = pkg.archiveURL.deletingLastPathComponent.appendingPathComponent("extracted", isDirectory: true)
+                let sourceDir = pkg.archiveURL.deletingLastPathComponent().appendingPathComponent("extracted", isDirectory: true)
                 let workDir = tempDir.appendingPathComponent("package", isDirectory: true)
                 try FileManager.default.copyItem(at: sourceDir, to: workDir)
 
