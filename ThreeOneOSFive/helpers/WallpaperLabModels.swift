@@ -113,7 +113,7 @@ struct WallpaperPosterLayout: Equatable {
     }
 
     var supportedTypes: [WallpaperPosterType] {
-        extensionDescriptorDirectories.keys.compactMap { type(for: $0) }
+        extensionDescriptorDirectories.keys.compactMap { Self.type(for: $0) }
     }
 
     static func type(for identifier: String) -> WallpaperPosterType? {
