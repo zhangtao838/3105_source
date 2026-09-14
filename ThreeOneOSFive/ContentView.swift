@@ -1,5 +1,16 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+
+struct WallpaperAlert: Identifiable {
+    let id = UUID()
+    let kind: Kind
+    enum Kind {
+        case install(WallpaperStagedPackage)
+        case resetAll
+        case message(titleKey: String, message: String)
+    }
+}
 
 struct ContentView: View {
     @Environment(\.appLanguage) private var language
@@ -51,7 +62,7 @@ struct WallpaperLibraryView: View {
     @State private var operationKey = "wallpaper.checking"
     @State private var showImporter = false
     @State private var showVideoImporter = false
-    @State private var alert: WallpaperLabAlert?
+    @State private var activeAlert: WallpaperAlert?
     @State private var hasLoaded = false
     @State private var selectedPackage: WallpaperStagedPackage?
     @State private var showDetail = false
@@ -89,7 +100,7 @@ struct WallpaperLibraryView: View {
                         }
                         Divider()
                         Button(role: .destructive) {
-                            alert = WallpaperLabAlert(kind: .resetAll)
+                            activeAlert = WallpaperAlert(kind: .resetAll)
                         } label: {
                             Label("重置全部自定义", systemImage: "arrow.counterclockwise")
                         }
@@ -106,7 +117,7 @@ struct WallpaperLibraryView: View {
                 )
             }
             .overlay { busyOverlay }
-            .alert(item: $alert, content: alertContent)
+            .alert(item: $activeAlert, content: alertContent)
             .sheet(isPresented: $showImporter) {
                 FileDocumentPicker(
                     allowedContentTypes: [UTType(filenameExtension: "tendies") ?? .data, .data],
@@ -140,7 +151,7 @@ struct WallpaperLibraryView: View {
             .navigationDestination(isPresented: $showDetail) {
                 if let pkg = selectedPackage {
                     WallpaperDetailView(package: pkg, canInstall: report?.canInstall == true) {
-                        alert = WallpaperLabAlert(kind: .install(pkg))
+                        activeAlert = WallpaperAlert(kind: .install(pkg))
                     }
                 }
             }
@@ -286,7 +297,7 @@ struct WallpaperLibraryView: View {
         }
     }
 
-    private func alertContent(_ alert: WallpaperLabAlert) -> Alert {
+    private func alertContent(_ alert: WallpaperAlert) -> Alert {
         switch alert.kind {
         case .install(let pkg):
             return Alert(
@@ -334,7 +345,7 @@ struct WallpaperLibraryView: View {
             DispatchQueue.main.async {
                 isBusy = false
                 packages = WallpaperPackageStore.packages()
-                alert = WallpaperLabAlert(kind: .message(titleKey: "wallpaper.import_done_title", message: "成功导入 \(count) 个壁纸包"))
+                activeAlert = WallpaperAlert(kind: .message(titleKey: "wallpaper.import_done_title", message: "成功导入 \(count) 个壁纸包"))
             }
         }
     }
@@ -357,9 +368,9 @@ struct WallpaperLibraryView: View {
                 switch result {
                 case .success:
                     packages = WallpaperPackageStore.packages()
-                    alert = WallpaperLabAlert(kind: .message(titleKey: "wallpaper.import_done_title", message: "视频转换成功，已导入壁纸库"))
+                    activeAlert = WallpaperAlert(kind: .message(titleKey: "wallpaper.import_done_title", message: "视频转换成功，已导入壁纸库"))
                 case .failure(let error):
-                    alert = WallpaperLabAlert(kind: .message(titleKey: "wallpaper.operation_failed", message: error.localizedDescription))
+                    activeAlert = WallpaperAlert(kind: .message(titleKey: "wallpaper.operation_failed", message: error.localizedDescription))
                 }
             }
         }
@@ -378,9 +389,9 @@ struct WallpaperLibraryView: View {
                     report = refreshed
                     packages = WallpaperPackageStore.packages()
                     _ = openApplicationForBundleID("com.apple.PosterBoard")
-                    alert = WallpaperLabAlert(kind: .message(titleKey: "wallpaper.install_done_title", message: "安装成功，请在壁纸设置中选择"))
+                    activeAlert = WallpaperAlert(kind: .message(titleKey: "wallpaper.install_done_title", message: "安装成功，请在壁纸设置中选择"))
                 case .failure(let error):
-                    alert = WallpaperLabAlert(kind: .message(titleKey: "wallpaper.operation_failed", message: error.localizedDescription))
+                    activeAlert = WallpaperAlert(kind: .message(titleKey: "wallpaper.operation_failed", message: error.localizedDescription))
                 }
             }
         }
@@ -396,7 +407,7 @@ struct WallpaperLibraryView: View {
                 isBusy = false
                 if case .success(let (_, refreshed)) = result {
                     report = refreshed
-                    alert = WallpaperLabAlert(kind: .message(titleKey: "wallpaper.reset_done_title", message: "已重置全部自定义壁纸"))
+                    activeAlert = WallpaperAlert(kind: .message(titleKey: "wallpaper.reset_done_title", message: "已重置全部自定义壁纸"))
                 }
             }
         }
@@ -587,7 +598,7 @@ struct WallpaperSettingsView: View {
     @Environment(\.appLanguage) private var language
     @State private var report: WallpaperAccessReport?
     @State private var isBusy = false
-    @State private var alert: WallpaperResetAlert?
+    @State private var activeAlert: WallpaperResetAlert?
     let onOpenLogs: () -> Void
 
     var body: some View {
@@ -607,7 +618,7 @@ struct WallpaperSettingsView: View {
 
                 Section("操作") {
                     Button(role: .destructive) {
-                        alert = WallpaperResetAlert(kind: .confirm)
+                        activeAlert = WallpaperResetAlert(kind: .confirm)
                     } label: {
                         Label("重置全部自定义壁纸", systemImage: "arrow.counterclockwise")
                     }
@@ -630,7 +641,7 @@ struct WallpaperSettingsView: View {
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.large)
             .tint(Color(red: 0.42, green: 0.36, blue: 0.91))
-            .alert(item: $alert) { alert in
+            .alert(item: $activeAlert) { alert in
                 switch alert.kind {
                 case .confirm:
                     return Alert(
@@ -669,9 +680,9 @@ struct WallpaperSettingsView: View {
                 switch result {
                 case .success(let (_, refreshed)):
                     report = refreshed
-                    alert = WallpaperResetAlert(kind: .success)
+                    activeAlert = WallpaperResetAlert(kind: .success)
                 case .failure(let error):
-                    alert = WallpaperResetAlert(kind: .failure(error.localizedDescription))
+                    activeAlert = WallpaperResetAlert(kind: .failure(error.localizedDescription))
                 }
             }
         }
