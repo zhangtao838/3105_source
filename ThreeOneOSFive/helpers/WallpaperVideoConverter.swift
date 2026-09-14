@@ -51,7 +51,7 @@ enum WallpaperVideoConverter {
         )
         try fileManager.createDirectory(at: descriptorURL, withIntermediateDirectories: true)
 
-        let videoOutputURL = descriptorURL.appendingPathComponent("video.mov")
+        let videoOutputURL = descriptorURL.appendingPathComponent("video.mp4")
         let posterOutputURL = descriptorURL.appendingPathComponent("poster.heic")
 
         try exportVideo(
@@ -70,7 +70,7 @@ enum WallpaperVideoConverter {
         try writeIdentifierFile(at: descriptorURL)
         try writeWallpaperPlist(
             at: descriptorURL,
-            videoFilename: "video.mov",
+            videoFilename: "video.mp4",
             posterFilename: "poster.heic",
             duration: options.trimDuration.seconds,
             loop: options.loop
@@ -102,7 +102,7 @@ enum WallpaperVideoConverter {
         }
 
         export.outputURL = outputURL
-        export.outputFileType = .mov
+        export.outputFileType = .mp4
         export.shouldOptimizeForNetworkUse = true
 
         let startTime = options.trimStart
@@ -173,7 +173,10 @@ enum WallpaperVideoConverter {
             "poster": posterFilename,
             "duration": duration,
             "loop": loop,
-            "type": "video"
+            "type": "video",
+            "provider": "com.apple.PhotosUIPrivate.PhotosPosterProvider",
+            "autoplay": true,
+            "muted": true
         ]
         let data = try PropertyListSerialization.data(
             fromPropertyList: plist,

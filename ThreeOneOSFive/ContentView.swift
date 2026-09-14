@@ -62,6 +62,7 @@ struct WallpaperLibraryView: View {
     @State private var operationKey = "wallpaper.checking"
     @State private var showImporter = false
     @State private var showVideoImporter = false
+    @State private var showEditor = false
     @State private var activeAlert: WallpaperAlert?
     @State private var hasLoaded = false
     @State private var selectedPackage: WallpaperStagedPackage?
@@ -148,6 +149,9 @@ struct WallpaperLibraryView: View {
                 )
                 .ignoresSafeArea()
             }
+            .sheet(isPresented: $showEditor) {
+                LayeredAnimationEditorView()
+            }
             .navigationDestination(isPresented: $showDetail) {
                 if let pkg = selectedPackage {
                     WallpaperDetailView(package: pkg, canInstall: report?.canInstall == true) {
@@ -212,12 +216,15 @@ struct WallpaperLibraryView: View {
     }
 
     private var quickActions: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             actionButton(title: "导入壁纸", icon: "square.and.arrow.down.fill", color: Color(red: 0.2, green: 0.5, blue: 0.95)) {
                 showImporter = true
             }
             actionButton(title: "视频转壁纸", icon: "video.fill.badge.plus", color: Color(red: 0.65, green: 0.35, blue: 0.95)) {
                 showVideoImporter = true
+            }
+            actionButton(title: "动画编辑器", icon: "square.stack.3d.up", color: Color(red: 0.95, green: 0.55, blue: 0.2)) {
+                showEditor = true
             }
             actionButton(title: "刷新状态", icon: "arrow.clockwise", color: Color(red: 0.2, green: 0.65, blue: 0.45)) {
                 checkAccess()
@@ -611,6 +618,31 @@ struct WallpaperSettingsView: View {
                         LabeledContent("Generation", value: report.layout.generation)
                         LabeledContent("已安装描述符", value: "\(report.descriptorCount)")
                         LabeledContent("自定义描述符", value: "\(report.customDescriptorCount)")
+                    } else {
+                        ProgressView()
+                    }
+                }
+
+                Section("支持的 Poster 类型") {
+                    if let report {
+                        if report.layout.supportedTypes.isEmpty {
+                            Text("未检测到支持的类型")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(report.layout.supportedTypes, id: \.self) { type in
+                                HStack {
+                                    Image(systemName: type.systemImage)
+                                        .foregroundStyle(Color(red: 0.42, green: 0.36, blue: 0.91))
+                                        .frame(width: 24)
+                                    Text(type.displayName)
+                                    Spacer()
+                                    Text(report.layout.extensionDescriptorDirectories.first(where: { WallpaperPosterLayout.type(for: $0.key) == type })?.key ?? "")
+                                        .font(.caption2.monospaced())
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                        }
                     } else {
                         ProgressView()
                     }
