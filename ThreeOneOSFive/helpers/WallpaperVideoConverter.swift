@@ -67,14 +67,18 @@ enum WallpaperVideoConverter {
             outputURL: posterOutputURL
         )
 
-        try writeIdentifierFile(at: descriptorURL)
+        let identifier = Int.random(in: 10_000...2_000_000_000)
+
+        try writeIdentifierFile(at: descriptorURL, identifier: identifier)
         try writeWallpaperPlist(
             at: descriptorURL,
+            identifier: identifier,
             videoFilename: "video.mp4",
             posterFilename: "poster.heic",
             duration: options.trimDuration.seconds,
             loop: options.loop
         )
+        try writeUserInfoFile(at: descriptorURL, identifier: identifier)
 
         let tendiesURL = outputDirectory.appendingPathComponent(
             "\(descriptorName).tendies"
@@ -149,8 +153,7 @@ enum WallpaperVideoConverter {
         }
     }
 
-    private static func writeIdentifierFile(at descriptorURL: URL) throws {
-        let identifier = Int.random(in: 10_000...2_000_000_000)
+    private static func writeIdentifierFile(at descriptorURL: URL, identifier: Int) throws {
         let data = String(identifier).data(using: .utf8)
         try data?.write(
             to: descriptorURL.appendingPathComponent(
@@ -160,21 +163,41 @@ enum WallpaperVideoConverter {
         )
     }
 
+    private static func writeUserInfoFile(at descriptorURL: URL, identifier: Int) throws {
+        let plist: [String: Any] = [
+            "wallpaperRepresentingIdentifier": identifier,
+            "wallpaperType": "video",
+            "autoplay": true,
+            "muted": true
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: plist,
+            format: .binary,
+            options: 0
+        )
+        try data.write(
+            to: descriptorURL.appendingPathComponent(
+                "com.apple.posterkit.provider.contents.userInfo"
+            ),
+            options: .atomic
+        )
+    }
+
     private static func writeWallpaperPlist(
         at descriptorURL: URL,
+        identifier: Int,
         videoFilename: String,
         posterFilename: String,
         duration: Double,
         loop: Bool
     ) throws {
         let plist: [String: Any] = [
-            "identifier": Int.random(in: 10_000...2_000_000_000),
+            "identifier": identifier,
             "video": videoFilename,
             "poster": posterFilename,
             "duration": duration,
             "loop": loop,
             "type": "video",
-            "provider": "com.apple.PhotosUIPrivate.PhotosPosterProvider",
             "autoplay": true,
             "muted": true
         ]
