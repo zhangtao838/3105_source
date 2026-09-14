@@ -261,7 +261,7 @@ struct LayeredAnimationEditorView: View {
     private var layersList: some View {
         List {
             if layers.isEmpty {
-                ContentUnavailableView("无图层", systemImage: "square.stack", description: Text("这个壁纸包不包含可编辑的图层"))
+                EmptyStateView(title: "无图层", systemImage: "square.stack", description: "这个壁纸包不包含可编辑的图层")
             } else {
                 ForEach(Array(layers.enumerated()), id: \.element.id) { index, layer in
                     LayerListRow(
@@ -365,7 +365,7 @@ struct LayeredAnimationEditorView: View {
                     .padding(.bottom, 16)
                 }
             } else {
-                ContentUnavailableView("未选中图层", systemImage: "slider.horizontal.3", description: Text("在画布或图层列表中选择一个图层"))
+                EmptyStateView(title: "未选中图层", systemImage: "slider.horizontal.3", description: "在画布或图层列表中选择一个图层")
             }
         }
         .frame(maxHeight: .infinity)
@@ -811,6 +811,29 @@ struct LayerListRow: View {
         }
         .buttonStyle(.plain)
         .listRowBackground(isSelected ? Color(red: 0.42, green: 0.36, blue: 0.91).opacity(0.08) : Color.white)
+    }
+}
+
+struct EmptyStateView: View {
+    let title: String
+    let systemImage: String
+    let description: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.largeTitle)
+                .foregroundStyle(.gray)
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Text(description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.vertical, 40)
+        .frame(maxWidth: .infinity)
     }
 }
 
