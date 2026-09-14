@@ -1,0 +1,64 @@
+name: Build 3105
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build IPA
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -switch /Applications/Xcode_15.4.app
+          xcodebuild -version
+
+      - name: Install dependencies
+        run: |
+          if [ -f Podfile ]; then
+            pod install
+          fi
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project ThreeOneOSFive.xcodeproj \
+            -scheme 3105 \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/3105.xcarchive \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive
+
+      - name: Export IPA
+        run: |
+          mkdir -p build/Payload
+          cp -R build/3105.xcarchive/Products/Applications/3105.app build/Payload/
+          cd build && zip -r 3105-unsigned.ipa Payload
+          cd ..
+          ls -lh build/3105-unsigned.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3105-unsigned-ipa
+          path: build/3105-unsigned.ipa
+          retention-days: 30
+
+      - name: Upload xcarchive (for signing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3105-xcarchive
+          path: build/3105.xcarchive
+          retention-days: 7
