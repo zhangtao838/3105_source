@@ -138,9 +138,18 @@ enum WallpaperVideoConverter {
         options: WallpaperVideoConversionOptions,
         outputURL: URL
     ) throws {
+        let presets = [
+            AVAssetExportPreset1920x1080,
+            AVAssetExportPreset1280x720,
+            AVAssetExportPresetMediumQuality,
+            AVAssetExportPresetLowQuality
+        ]
+        let compatiblePresets = AVAssetExportSession.exportPresets(compatibleWith: asset)
+        let preset = presets.first { compatiblePresets.contains($0) } ?? AVAssetExportPresetMediumQuality
+
         guard let export = AVAssetExportSession(
             asset: asset,
-            presetName: AVAssetExportPresetHighestQuality
+            presetName: preset
         ) else {
             throw WallpaperVideoError.exportFailed
         }
